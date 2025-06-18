@@ -1,3 +1,14 @@
+joblib==1.5.1
 kafka-python==2.2.11
+numpy==2.3.0
+pandas==2.3.0
 py4j==0.10.9.5
 pyspark==3.3.1
+python-dateutil==2.9.0.post0
+pytz==2025.2
+redis==6.2.0
+scikit-learn==1.7.0
+scipy==1.15.3
+six==1.17.0
+threadpoolctl==3.6.0
+tzdata==2025.2
