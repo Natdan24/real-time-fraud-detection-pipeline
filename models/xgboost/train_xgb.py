@@ -30,7 +30,8 @@ X_train, X_test, y_train, y_test = train_test_split(
 # 7️⃣ Train the XGBoost classifier
 model = XGBClassifier(
     n_estimators=100,
-    use_label_encoder=False,
+    objective='binary:logistic',   # ensure we’re doing binary classification
+    base_score=0.5,                # valid default prior probability
     eval_metric='logloss',
     random_state=42
 )
