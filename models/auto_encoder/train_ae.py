@@ -4,7 +4,7 @@ from sklearn.preprocessing import StandardScaler
 from joblib import dump
 
 # 1. Load features
-df = pd.read_csv('../../user_features.csv')
+df = pd.read_csv('user_features.csv')
 X = df[['transaction_count','avg_amount']].values
 
 # 2. Scale
@@ -23,6 +23,6 @@ ae.compile(optimizer='adam', loss='mse')
 ae.fit(Xs, Xs, epochs=30, batch_size=8, validation_split=0.1)
 
 # 5. Save model + scaler
-ae.save('ae_model.h5')
+ae.save('ae_model.keras')
 dump(scaler, 'ae_scaler.joblib')
 print("Autoencoder trained and saved.")
