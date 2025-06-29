@@ -1,5 +1,5 @@
 # serve_model.py
-
+from prometheus_fastapi_instrumentator import Instrumentator
 import os
 import requests
 from joblib import load
@@ -35,6 +35,7 @@ class ExplainResponse(PredictionResponse):
     explanation: str
 
 app = FastAPI(title="Fraud Detection & Explainability API")
+Instrumentator().instrument(app).expose(app)
 
 # ─── 5. PREDICT ENDPOINT ──────────────────────────────────────────────────────
 @app.get("/predict", response_model=PredictionResponse)

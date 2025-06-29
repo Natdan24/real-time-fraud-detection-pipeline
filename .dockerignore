@@ -1,0 +1,21 @@
+cat > .dockerignore << 'EOF'
+# local Python virtualenvs
+.venv/
+env/
+venv/
+
+# IDE + git
+.vscode/
+.idea/
+.git/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# dotenv secrets
+.env
+
+# Don't send your compose file into the image
+docker-compose.yml
+EOF
