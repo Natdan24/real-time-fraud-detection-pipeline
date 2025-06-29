@@ -1,6 +1,8 @@
+# producer.py
 import json
 import time
 import random
+import psycopg2
 from kafka import KafkaProducer
 
 # 1. Point to our local broker
@@ -8,6 +10,18 @@ producer = KafkaProducer(
     bootstrap_servers='localhost:9092',
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
+
+# 2. Postgres connection (writes to transactions_raw)
+db_conn = psycopg2.connect(
+    dbname="fraud_db",
+    user="postgres",
+    password="password",
+    host="localhost",
+    port=5432
+)
+db_conn.autocommit = True
+db_cur = db_conn.cursor()
+
 
 def generate_transaction():
     """Simulate a fake transaction record."""
@@ -19,38 +33,40 @@ def generate_transaction():
         'country': random.choice(['US', 'NG', 'GB', 'IN', 'DE'])
     }
 
+
 if __name__ == '__main__':
     print("Starting to send transactions to Kafka…")
     try:
         while True:
             txn = generate_transaction()
-            # 2. Send to the 'transactions' topic
+
+            # a) send to Kafka
             producer.send('transactions', txn)
-            print(f"Sent: {txn}")
-            producer.flush()        # force sending
-            time.sleep(1)           # one message per second
+            producer.flush()
+
+            # b) also write raw to Postgres
+            db_cur.execute(
+                """
+                INSERT INTO transactions_raw
+                  (id, user_id, amount, timestamp, country)
+                VALUES (%s, %s, %s, to_timestamp(%s), %s)
+                """,
+                (
+                    txn['transaction_id'],
+                    txn['user_id'],
+                    txn['amount'],
+                    txn['timestamp'],
+                    txn['country']
+                )
+            )
+
+            print(f"Sent & stored: {txn}")
+            time.sleep(1)  # one message per second
+
     except KeyboardInterrupt:
         print("Producer stopped.")
+
     finally:
+        db_cur.close()
+        db_conn.close()
         producer.close()
-
-"""
-KafkaProducer(...)
-
-bootstrap_servers: where your broker lives
-
-value_serializer: turns Python dict → JSON bytes
-
-generate_transaction()
-
-Simulates random fields for a transaction
-
-producer.send(...)
-
-Sends each JSON-encoded record to the transactions topic
-
-producer.flush()
-
-Ensures messages are actually dispatched before sleeping
-
-"""

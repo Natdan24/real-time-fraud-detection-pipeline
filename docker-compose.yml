@@ -33,11 +33,12 @@ services:
 
   api:
     build: .
-    volumes:
-      - .:/app
     container_name: fraud-api
     depends_on:
       - redis
+      - postgres
+    volumes:
+      - .:/app
     ports:
       - "8000:8000"
     environment:
@@ -45,12 +46,16 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
 
-      # LM Studio Mistral 7B endpoint
-      LMSTUDIO_URL: "http://host.docker.internal:1234/v1/generate"
-      LMSTUDIO_MODEL: "mistral-7b"
+      # Postgres (for SQL analytics endpoints)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB:    fraud_db
+      POSTGRES_USER:  postgres
+      POSTGRES_PASSWORD: password
 
-      # (optional) your OpenAI key if you ever switch back
-      # OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      # LM Studio Mistral 7B endpoint
+      LMSTUDIO_URL:   "http://host.docker.internal:1234/v1/generate"
+      LMSTUDIO_MODEL: "mistral-7b"
   
   prometheus:
     image: prom/prometheus:latest
@@ -67,8 +72,21 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
-# This must be at the root, not under services!
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: fraud-postgres
+    environment:
+      POSTGRES_DB:       fraud_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: password
+      # you can also set POSTGRES_HOST_AUTH_METHOD=trust if you prefer
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
 
 volumes:
   redis-data:
-
+  pgdata:
