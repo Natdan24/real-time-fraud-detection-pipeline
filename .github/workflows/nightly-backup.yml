@@ -13,14 +13,15 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
 
-      - name: Set up Docker Compose
+      - name: Set up Docker Buildx (with Compose plugin)
         uses: docker/setup-buildx-action@v2
         with:
           buildkitd-flags: --debug
 
       - name: Start Postgres container
         run: |
-          docker-compose up -d postgres
+          # Use Docker Compose V2 plugin
+          docker compose up -d postgres
 
       - name: Wait for Postgres to be ready
         run: |
