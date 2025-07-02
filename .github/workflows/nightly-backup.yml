@@ -34,7 +34,7 @@ jobs:
           ./backup_fraud_summary.sh
 
       - name: Upload backup as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: fraud-summary-backup-${{ github.run_date }}
           path: backups/fraud_summary_*.csv
