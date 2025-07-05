@@ -3,7 +3,7 @@ import pandas as pd
 import psycopg2
 from datetime import datetime, timedelta
 
-@st.cache(ttl=300)
+@st.cache_data(ttl=300)
 def get_data(query: str):
     conn = psycopg2.connect(
         dbname="fraud_db", user="postgres",
