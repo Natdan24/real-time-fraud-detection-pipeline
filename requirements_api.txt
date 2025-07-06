@@ -12,3 +12,5 @@ psycopg2-binary
 great_expectations
 pandas
 streamlit
+# Avro‐enabled Kafka client for Schema Registry
+confluent-kafka[avro]
