@@ -1,22 +1,23 @@
 # tests/test_api.py
 import pytest
 from fastapi.testclient import TestClient
-from serve_model import app, load_redis, model
+import serve_model
 
-client = TestClient(app)
+# Create the TestClient after we stub the globals
+client = TestClient(serve_model.app)
 
 class DummyRedis:
     def exists(self, key): return True
-    def hgetall(self, key): return {b"count": b"3", b"avg_amount": b"50.0"}
+    def hgetall(self, key): return {b"count": b"5", b"avg_amount": b"100.0"}
 
 class DummyModel:
-    def decision_function(self, X): return [0.2]  # a positive score
+    def decision_function(self, X): return [0.5]
 
 @pytest.fixture(autouse=True)
-def patch_dependencies(monkeypatch):
-    # Always use our dummy Redis and model
-    monkeypatch.setattr("serve_model.load_redis", lambda: DummyRedis())
-    monkeypatch.setattr("serve_model.model", DummyModel())
+def patch_redis_and_model(monkeypatch):
+    # Replace the global r and model in serve_model
+    monkeypatch.setattr(serve_model, "r", DummyRedis())
+    monkeypatch.setattr(serve_model, "model", DummyModel())
 
 def test_predict_success():
     """When Redis has data, /predict returns 200 with expected JSON."""
@@ -24,18 +25,14 @@ def test_predict_success():
     assert response.status_code == 200
     data = response.json()
     assert data["user_id"] == 123
-    assert data["anomaly_score"] == pytest.approx(0.2)
+    assert data["anomaly_score"] == pytest.approx(0.5)
     assert data["is_fraud"] is False
 
-def test_predict_missing_user():
+def test_predict_missing_user(monkeypatch):
     """When Redis.exists is False, /predict returns 404."""
     class EmptyRedis:
         def exists(self, key): return False
-    # override just for this test
-    from serve_model import r as real_redis
-    from serve_model import r
-    import serve_model
-    serve_model.r = EmptyRedis()
+    monkeypatch.setattr(serve_model, "r", EmptyRedis())
 
     response = client.get("/predict?user_id=999")
     assert response.status_code == 404
