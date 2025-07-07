@@ -53,4 +53,4 @@ jobs:
           pytest --cov=.
 
       - name: Build API Docker image
-        run: docker-compose build api
+        run: docker compose build api
