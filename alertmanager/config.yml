@@ -1,0 +1,11 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: "console"
+
+receivers:
+  - name: "console"
+    # In prod you’d configure email, Slack, etc.
+    webhook_configs:
+      - url: "http://localhost:5001/"  # a dummy receiver that just logs

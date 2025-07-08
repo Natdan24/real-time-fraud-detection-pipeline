@@ -1,0 +1,11 @@
+groups:
+  - name: FraudAlerts
+    rules:
+      - alert: HighFraudRate
+        expr: sum(rate(http_requests_total{path="/predict",status="200"}[5m])) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High fraud prediction rate ({{ $value }} reqs/sec)"
+          description: "The /predict endpoint is being hit more than 10 times/sec on average over 5m."
