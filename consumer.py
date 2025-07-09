@@ -1,16 +1,21 @@
 # consumer.py
+import os
 import time
 import requests
 import psycopg2
 from confluent_kafka.avro import AvroConsumer
 from confluent_kafka import KafkaException
+import redis
 
-# ─── 0. Schema Registry + Kafka config ────────────────────────────────────────
+# ─── 0. Resolve Kafka & Schema-Registry endpoints ─────────────────────────────
+bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+schema_rg = os.getenv("SCHEMA_REGISTRY_URL",   "http://localhost:8081")
+
 consumer_conf = {
-    "bootstrap.servers":    "kafka:9092",
+    "bootstrap.servers":    bootstrap,
     "group.id":             "fraud-consumer-avro",
     "auto.offset.reset":    "earliest",
-    "schema.registry.url":  "http://schema-registry:8081",
+    "schema.registry.url":  schema_rg,
 }
 
 # ─── 1. Build AvroConsumer ────────────────────────────────────────────────────
@@ -23,17 +28,25 @@ def get_pg_conn():
         dbname="fraud_db",
         user="postgres",
         password="password",
-        host="postgres",
+        host="localhost",
         port=5432
     )
     conn.autocommit = False
     return conn
 
-# ─── 3. Per‐transaction processing helper ────────────────────────────────────
+# ─── 2b. Redis connection (used for feature store) ────────────────────────────
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")   # use "redis" if you run inside Docker
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+
+r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+
+
+# ─── 3. Per-transaction processing helper ────────────────────────────────────
 def process_single_transaction(txn: dict, pg_conn):
     """
     Inserts one transaction into transactions_raw,
-    calls /predict, and upserts fraud_summary.
+    publishes features to Redis, calls /predict,
+    and upserts fraud_summary.
     """
     cur = pg_conn.cursor()
     try:
@@ -42,7 +55,7 @@ def process_single_transaction(txn: dict, pg_conn):
         ts      = txn["timestamp"]
         country = txn["country"]
 
-        # a) Insert the raw transaction
+        # a) Insert raw transaction -------------------------------------------------
         cur.execute(
             """
             INSERT INTO transactions_raw
@@ -52,7 +65,7 @@ def process_single_transaction(txn: dict, pg_conn):
             (user, amt, ts, country)
         )
 
-        # b) Recompute summary from raw table
+        # b) Recompute running summary ---------------------------------------------
         cur.execute(
             "SELECT COUNT(*), SUM(amount) FROM transactions_raw WHERE user_id = %s",
             (user,)
@@ -60,9 +73,21 @@ def process_single_transaction(txn: dict, pg_conn):
         count, total_amount = cur.fetchone()
         avg_amount = total_amount / count
 
-        # c) Call the FastAPI /predict endpoint
+        # c) ⇢ NEW: publish features to Redis so /predict can read them -------------
+        r.hset(
+            f"user:{user}",
+            mapping={
+                "count":      int(count),
+                "avg_amount": float(avg_amount),
+            }
+        )
+
+        # d) Commit Postgres so count/avg_amount are durable ------------------------
+        pg_conn.commit()
+
+        # e) Call the FastAPI /predict endpoint ------------------------------------
         resp = requests.get(
-            "http://api:8000/predict",
+            "http://localhost:8000/predict",
             params={"user_id": user},
             timeout=5
         )
@@ -71,19 +96,20 @@ def process_single_transaction(txn: dict, pg_conn):
         anomaly_score = result["anomaly_score"]
         is_fraud      = result["is_fraud"]
 
-        # d) Upsert into fraud_summary
+        # f) Upsert into fraud_summary ---------------------------------------------
         cur.execute(
             """
             INSERT INTO fraud_summary
-              (user_id, transaction_count, total_amount, avg_amount, anomaly_score, is_fraud)
+              (user_id, transaction_count, total_amount, avg_amount,
+               anomaly_score, is_fraud)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id) DO UPDATE SET
               transaction_count = EXCLUDED.transaction_count,
-              total_amount       = EXCLUDED.total_amount,
-              avg_amount         = EXCLUDED.avg_amount,
-              anomaly_score      = EXCLUDED.anomaly_score,
-              is_fraud           = EXCLUDED.is_fraud,
-              last_scored        = NOW();
+              total_amount      = EXCLUDED.total_amount,
+              avg_amount        = EXCLUDED.avg_amount,
+              anomaly_score     = EXCLUDED.anomaly_score,
+              is_fraud          = EXCLUDED.is_fraud,
+              last_scored       = NOW();
             """,
             (
                 user,
@@ -94,8 +120,8 @@ def process_single_transaction(txn: dict, pg_conn):
                 is_fraud
             )
         )
-
         pg_conn.commit()
+
     except Exception:
         pg_conn.rollback()
         raise

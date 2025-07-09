@@ -7,6 +7,8 @@ import psycopg2
 from fastapi import FastAPI, HTTPException, Query, Depends
 from pydantic import BaseModel
 from psycopg2 import OperationalError
+from metrics import TOTAL_TX_CNT, FRAUD_TX_CNT
+
 
 # ─── 1. LOAD YOUR TRAINED MODEL ─────────────────────────────────────────────
 MODEL_PATH = os.getenv("MODEL_PATH", "fraud_isolation_forest.joblib")
@@ -74,11 +76,18 @@ def predict(user_id: int = Query(..., description="ID of the user to score")):
     score    = float(model.decision_function([[count, avg_amount]])[0])
     is_fraud = score < 0.0
 
+    # ── Prometheus counters ────────────────────────────────
+    TOTAL_TX_CNT.inc()          # increment for every request
+    if is_fraud:
+        FRAUD_TX_CNT.inc()      # increment only when flagged as fraud
+    # ───────────────────────────────────────────────────────
+
     return PredictionResponse(
         user_id=user_id,
         anomaly_score=score,
         is_fraud=is_fraud
     )
+
 
 # ─── 7. EXPLAIN ENDPOINT ───────────────────────────────────────────────────
 @app.get("/explain", response_model=ExplainResponse)

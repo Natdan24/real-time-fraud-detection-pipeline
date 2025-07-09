@@ -1,61 +1,86 @@
 # producer.py
+import os
 import time
 import random
+from pathlib import Path
+
 import psycopg2
 import avro.schema
 from confluent_kafka.avro import AvroProducer
 
-# ─── 0. Parse your local Avro schema ───────────────────────────────────────────
-schema_path = "/app/schemas/transactions.avsc"  # adjust if needed
-with open(schema_path, "r") as f:
-    schema_str = f.read()
-value_schema = avro.schema.parse(schema_str)
+# ──────────────────────────────────────────────────────────
+# 0. Locate the Avro schema in a portable way
+# ──────────────────────────────────────────────────────────
+BASE_DIR = Path(__file__).resolve().parent
+schema_path = BASE_DIR / "schemas" / "transactions.avsc"
 
-# ─── 1. Point to Kafka broker with AvroProducer ───────────────────────────────
+with open(schema_path, "r", encoding="utf-8") as f:
+    value_schema = avro.schema.parse(f.read())
+
+# ──────────────────────────────────────────────────────────
+# 1. Kafka + Schema Registry config
+#    • Defaults assume you run *locally*.
+#    • When inside Docker Compose, override via env vars or
+#      they will resolve to service names `kafka` / `schema-registry`.
+# ──────────────────────────────────────────────────────────
+bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+schema_registry   = os.getenv("SCHEMA_REGISTRY_URL",    "http://localhost:8081")
+
 producer = AvroProducer(
     {
-        "bootstrap.servers": "kafka:9092",
-        "schema.registry.url": "http://schema-registry:8081"
+        "bootstrap.servers": bootstrap_servers,
+        "schema.registry.url": schema_registry
     },
     default_value_schema=value_schema
 )
 
-# ─── 2. Postgres connection (writes to transactions_raw) ───────────────────────
+# ──────────────────────────────────────────────────────────
+# 2. Postgres connection parameters
+#    • Override via env vars if needed.
+# ──────────────────────────────────────────────────────────
+PG_HOST = os.getenv("POSTGRES_HOST", "localhost")
+PG_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+
 db_conn = psycopg2.connect(
-    dbname="fraud_db",
-    user="postgres",
-    password="password",
-    host="postgres",    # Docker Compose service name
-    port=5432
+    dbname=os.getenv("POSTGRES_DB", "fraud_db"),
+    user=os.getenv("POSTGRES_USER", "postgres"),
+    password=os.getenv("POSTGRES_PASSWORD", "password"),
+    host=PG_HOST,
+    port=PG_PORT,
 )
 db_conn.autocommit = True
 db_cur = db_conn.cursor()
 
+# ──────────────────────────────────────────────────────────
+# 3. Fake-transaction generator
+# ──────────────────────────────────────────────────────────
 def generate_transaction():
-    """Simulate a fake transaction record."""
     return {
         "transaction_id": random.randint(100000, 999999),
         "user_id":       random.choice([101, 102, 103, 104]),
         "amount":        round(random.uniform(10.0, 5000.0), 2),
         "timestamp":     int(time.time()),
-        "country":       random.choice(["US", "NG", "GB", "IN", "DE"])
+        "country":       random.choice(["US", "NG", "GB", "IN", "DE"]),
     }
 
+# ──────────────────────────────────────────────────────────
+# 4. Main loop
+# ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🚀 Starting Avro producer…")
+    print("🚀 Starting Avro producer...")
     try:
         while True:
             txn = generate_transaction()
 
-            # a) Send to Kafka with Avro; on first run, the schema is auto-registered
+            # a) Publish to Kafka (Avro encoded)
             producer.produce(topic="transactions", value=txn)
             producer.flush()
 
-            # b) Also write raw to Postgres
+            # b) Store raw in Postgres
             db_cur.execute(
                 """
                 INSERT INTO transactions_raw
-                  (id, user_id, amount, timestamp, country)
+                      (id, user_id, amount, timestamp, country)
                 VALUES (%s, %s, %s, to_timestamp(%s), %s)
                 """,
                 (
@@ -63,8 +88,8 @@ if __name__ == "__main__":
                     txn["user_id"],
                     txn["amount"],
                     txn["timestamp"],
-                    txn["country"]
-                )
+                    txn["country"],
+                ),
             )
 
             print(f"✅ Sent & stored: {txn}")
