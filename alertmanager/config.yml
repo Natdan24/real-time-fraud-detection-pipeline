@@ -1,39 +1,11 @@
 global:
   resolve_timeout: 5m
 
-  # ── SMTP defaults used by all e-mail receivers (edit ↓) ───────────
-  smtp_smarthost: smtp.gmail.com:587     # or your company relay
-  smtp_from:      "fraud-alerts@yourdomain.com"
-  smtp_auth_username: "fraud-alerts@yourdomain.com"
-  smtp_auth_password: "APP-PASSWORD-OR-TOKEN"
-
 route:
-  # Send every alert to all receivers listed here
-  receiver: console                         # default
-  routes:
-    # High-severity alerts could override here
-    - receiver: email-main
-      matchers:
-        severity = warning|critical         # send only warning+ to email
-    - receiver: webhook-log                 # always log to the dummy webhook
+  receiver: "console"
 
 receivers:
-  # 1️⃣  Console logging (unchanged)
-  - name: console
-
-  # 2️⃣  Dummy webhook that echoes alerts
-  - name: webhook-log
+  - name: "console"
+    # In prod you’d configure email, Slack, etc.
     webhook_configs:
-      - url: "http://localhost:5001/"       # your echo endpoint
-
-  # 3️⃣  NEW – e-mail receiver
-  - name: email-main
-    email_configs:
-      - to:      "on-call@yourdomain.com"
-        send_resolved: true
-        headers:
-          Subject: '[Fraud-Pipeline] {{ .CommonLabels.alertname }} – {{ .Status }}'
-        html: |
-          <p><b>{{ .CommonAnnotations.summary }}</b></p>
-          <p>{{ .CommonAnnotations.description }}</p>
-          <p><i>Fired at:</i> {{ .StartsAt }}</p>
+      - url: "http://localhost:5001/"  # a dummy receiver that just logs
