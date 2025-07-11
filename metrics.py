@@ -10,4 +10,3 @@ FRAUD_TX_CNT = Counter(
     "fraud_summary_is_fraud_total",
     "Number of transactions the model labelled as fraud"
 )
-
